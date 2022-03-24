@@ -3,6 +3,7 @@ use std::{
     fs, io,
     path::{Path, PathBuf},
 };
+mod json;
 
 pub fn check_file(path: impl AsRef<Path>, specs: Vec<FileSpec>) -> Vec<Problem> {
     use FileSpec::*;
