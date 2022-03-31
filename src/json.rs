@@ -1,5 +1,5 @@
-use std::collections::HashSet;
-
+use std::{collections::HashSet, cmp::Ordering};
+use derive_more::IsVariant;
 use maplit::hashset;
 use regex::Regex;
 use strum::IntoEnumIterator;
@@ -13,7 +13,9 @@ pub enum NodeProblem {
     },
 }
 
+#[derive(Debug, IsVariant)]
 pub enum ValueRestriction {
+    Null,
     Bool(bool),
     ExactNumber(serde_json::Number),
     NumericRange(serde_json::Number, serde_json::Number),
@@ -22,15 +24,20 @@ pub enum ValueRestriction {
     Key(String, Box<NodeRestriction>),
 }
 
+fn compare(a: serde_json::Number, b: serde_json::Number) -> Ordering {
+    todo!()
+}
+
 impl ValueRestriction {
-    pub fn allows(&self, value: &serde_json::Value) {
-        match value {
-            serde_json::Value::Null => todo!(),
-            serde_json::Value::Bool(_) => todo!(),
-            serde_json::Value::Number(_) => todo!(),
-            serde_json::Value::String(_) => todo!(),
-            serde_json::Value::Array(_) => todo!(),
-            serde_json::Value::Object(_) => todo!(),
+    pub fn allows(&self, value: &serde_json::Value) -> bool {
+        match self {
+            ValueRestriction::Null => value.is_null(),
+            ValueRestriction::Bool(expected) => matches!(value, serde_json::Value::Bool(actual) if expected == actual),
+            ValueRestriction::ExactNumber(expected) => matches!(value, serde_json::Value::Number(actual) if expected == actual),
+            ValueRestriction::NumericRange(_, _) => todo!(),
+            ValueRestriction::ExactString(expected) => matches!(value, serde_json::Value::String(actual) if expected == actual),
+            ValueRestriction::Regex(regex) => matches!(value, serde_json::Value::String(actual) if regex.is_match(actual)),
+            ValueRestriction::Key(key, restriction) => todo!(),
         }
     }
 }
@@ -109,6 +116,7 @@ impl JsonType {
     }
 }
 
+#[derive(Debug)]
 pub enum NodeRestriction {
     TypeRestriction(TypeRestriction),
     ValueRestriction(ValueRestriction),
