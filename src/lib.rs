@@ -3,8 +3,6 @@ use std::{
     fs, io,
     path::{Path, PathBuf},
 };
-mod json;
-pub use json::{JsonType, ValueProblem, ValueValidator};
 
 pub fn check_file(path: impl AsRef<Path>, specs: Vec<FileSpec>) -> Vec<Problem> {
     use FileSpec::*;
