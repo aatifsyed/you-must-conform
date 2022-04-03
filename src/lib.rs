@@ -1,49 +1,64 @@
+use anyhow::Context;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use std::{
-    fs, io,
+    fs::{self, File},
+    io,
     path::{Path, PathBuf},
 };
+mod json;
+use generic_new::GenericNew;
 
-pub fn check_file(path: impl AsRef<Path>, specs: Vec<FileSpec>) -> Vec<Problem> {
+pub fn check_file(
+    path: impl AsRef<Path>,
+    specs: impl IntoIterator<Item = FileSpec>,
+) -> anyhow::Result<Vec<Problem>> {
     use FileSpec::*;
     use Problem::*;
     let mut problems = Vec::new();
     for content in specs {
         let path = path.as_ref().to_owned();
         match content {
-            HasLength(expected) => match path.metadata() {
-                Ok(metadata) => {
-                    let actual = metadata.len();
-                    problems.push(IncorrectLength {
+            HasLength(expected) => {
+                let actual = path
+                    .metadata()
+                    .context(format!("Couldn't get metadata of {}", path.display()))?
+                    .len();
+                problems.push(IncorrectLength {
+                    path,
+                    expected,
+                    actual,
+                })
+            }
+            MatchesRegex(regex) => {
+                let s = fs::read_to_string(&path)
+                    .context(format!("Couldn't read {}", path.display()))?;
+                if !regex.is_match(&s) {
+                    problems.push(RegexNotMatched { path, regex })
+                }
+            }
+            Json(schema) => {
+                let f = File::open(&path).context(format!("Couldn't open {}", path.display()))?;
+                match serde_json::from_reader::<_, serde_json::Value>(f) {
+                    Ok(value) => todo!(),
+                    Err(err) => problems.push(InvalidFormat {
                         path,
-                        expected,
-                        actual,
-                    })
+                        format: "json",
+                        err: err.into(),
+                    }),
                 }
-                Err(err) => problems.push(IoProblem {
-                    path,
-                    err,
-                    operation: "Reading length",
-                }),
-            },
-            ContainsRegex(regex) => match fs::read_to_string(&path) {
-                Ok(s) => {
-                    if !regex.is_match(&s) {
-                        problems.push(RegexNotMatched { path, regex })
-                    }
-                }
-                Err(err) => problems.push(IoProblem {
-                    path,
-                    err,
-                    operation: "Matching regex",
-                }),
-            },
+            }
+            Toml(schema) => todo!(),
+            Yaml(schema) => todo!(),
         }
     }
-    problems
+    Ok(problems)
 }
 
-pub fn check_folder(path: impl AsRef<Path>, children: Vec<FilesAndFolders>) -> Vec<Problem> {
+pub fn check_folder(
+    path: impl AsRef<Path>,
+    children: impl IntoIterator<Item = FilesAndFolders>,
+) -> anyhow::Result<Vec<Problem>> {
     use FilesAndFolders::*;
     use Problem::*;
     let path = PathBuf::from(path.as_ref());
@@ -53,7 +68,7 @@ pub fn check_folder(path: impl AsRef<Path>, children: Vec<FilesAndFolders>) -> V
             File(file) => {
                 let path = path.join(file.name);
                 match path.is_file() {
-                    true => problems.extend(check_file(path, file.specs)),
+                    true => problems.extend(check_file(path, file.specs)?),
                     false => problems.push(FileNotPresent(path)),
                 }
             }
@@ -66,7 +81,7 @@ pub fn check_folder(path: impl AsRef<Path>, children: Vec<FilesAndFolders>) -> V
             Folder(folder) => {
                 let path = path.join(folder.name);
                 match path.is_dir() {
-                    true => problems.extend(check_folder(path, folder.children)),
+                    true => problems.extend(check_folder(path, folder.children)?),
                     false => problems.push(FolderNotPresent(path)),
                 }
             }
@@ -78,7 +93,7 @@ pub fn check_folder(path: impl AsRef<Path>, children: Vec<FilesAndFolders>) -> V
             }
         }
     }
-    problems
+    Ok(problems)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -89,11 +104,11 @@ pub enum Problem {
         expected: u64,
         actual: u64,
     },
-    #[error("Error accessing {} for {operation}: {err}", .path.display())]
-    IoProblem {
+    #[error("File {} couldn't be read in as {format}: {err:?}", .path.display())]
+    InvalidFormat {
         path: PathBuf,
-        err: io::Error,
-        operation: &'static str,
+        format: &'static str,
+        err: anyhow::Error,
     },
     #[error("File {} does not match regex {regex}", .path.display())]
     RegexNotMatched { path: PathBuf, regex: Regex },
@@ -107,65 +122,41 @@ pub enum Problem {
     DisallowedFolder(PathBuf),
 }
 
-#[derive(Debug, Clone)]
-pub enum FileSpec {
-    HasLength(u64),
-    ContainsRegex(Regex),
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum Schema {
+    Like(serde_json::Value),
+    Schema(serde_json::Value),
 }
 
 #[derive(Debug, Clone)]
+pub enum FileSpec {
+    HasLength(u64),
+    MatchesRegex(Regex),
+    Json(Schema),
+    Toml(Schema),
+    Yaml(Schema),
+}
+
+#[derive(Debug, Clone, GenericNew)]
 pub struct FilePresent {
     name: String,
     specs: Vec<FileSpec>,
 }
 
-impl FilePresent {
-    pub fn new(name: impl AsRef<str>, specs: impl AsRef<[FileSpec]>) -> Self {
-        Self {
-            name: name.as_ref().to_owned(),
-            specs: specs.as_ref().to_vec(),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, GenericNew)]
 pub struct FileNotPresent {
     name: String,
 }
 
-impl FileNotPresent {
-    pub fn new(name: impl AsRef<str>) -> Self {
-        Self {
-            name: name.as_ref().to_owned(),
-        }
-    }
-}
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, GenericNew)]
 pub struct FolderPresent {
     name: String,
     children: Vec<FilesAndFolders>,
 }
 
-impl FolderPresent {
-    pub fn new(name: impl AsRef<str>, children: &[FilesAndFolders]) -> Self {
-        Self {
-            name: name.as_ref().to_owned(),
-            children: children.as_ref().to_vec(),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, GenericNew)]
 pub struct FolderNotPresent {
     name: String,
-}
-
-impl FolderNotPresent {
-    pub fn new(name: impl AsRef<str>) -> Self {
-        Self {
-            name: name.as_ref().to_owned(),
-        }
-    }
 }
 
 #[derive(Debug, derive_more::From, Clone)]
@@ -190,7 +181,7 @@ mod tests {
     #[test]
     fn empty_dir() -> anyhow::Result<()> {
         let d = tempdir()?;
-        let problems = check_folder(d, vec![]);
+        let problems = check_folder(d, [])?;
         println!("{problems:?}");
         assert!(matches!(problems.as_slice(), []));
         Ok(())
@@ -201,11 +192,11 @@ mod tests {
         let d = tempdir()?;
         fs::File::create(d.path().join("foo"))?;
 
-        let problems = check_folder(&d, vec![FilePresent::new("foo", []).into()]);
+        let problems = check_folder(&d, [FilePresent::new("foo", []).into()])?;
         println!("{problems:?}");
         assert!(matches!(problems.as_slice(), []));
 
-        let problems = check_folder(&d, vec![FileNotPresent::new("foo").into()]);
+        let problems = check_folder(&d, [FileNotPresent::new("foo").into()])?;
         println!("{problems:?}");
         assert!(matches!(problems.as_slice(), [DisallowedFile(_)]));
 
@@ -217,11 +208,11 @@ mod tests {
         let d = tempdir()?;
         fs::create_dir(d.path().join("foo"))?;
 
-        let problems = check_folder(&d, vec![FolderPresent::new("foo", &[]).into()]);
+        let problems = check_folder(&d, [FolderPresent::new("foo", []).into()])?;
         println!("{problems:?}");
         assert!(matches!(problems.as_slice(), []));
 
-        let problems = check_folder(&d, vec![FolderNotPresent::new("foo").into()]);
+        let problems = check_folder(&d, [FolderNotPresent::new("foo").into()])?;
         println!("{problems:?}");
         assert!(matches!(problems.as_slice(), [DisallowedFolder(_)]));
 
@@ -235,15 +226,15 @@ mod tests {
 
         let problems = check_folder(
             &d,
-            vec![FolderPresent::new("foo", &[FolderPresent::new("bar", &[]).into()]).into()],
-        );
+            [FolderPresent::new("foo", [FolderPresent::new("bar", []).into()]).into()],
+        )?;
         println!("{problems:?}");
         assert!(matches!(problems.as_slice(), []));
 
         let problems = check_folder(
             &d,
-            vec![FolderPresent::new("foo", &[FolderNotPresent::new("bar").into()]).into()],
-        );
+            [FolderPresent::new("foo", [FolderNotPresent::new("bar").into()]).into()],
+        )?;
         println!("{problems:?}");
         assert!(matches!(problems.as_slice(), [DisallowedFolder(_)]));
 
