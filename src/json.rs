@@ -1,99 +1,113 @@
-use std::{collections::HashSet, cmp::Ordering};
 use derive_more::IsVariant;
-use maplit::hashset;
 use regex::Regex;
-use strum::IntoEnumIterator;
+use std::collections::HashSet;
 
 #[derive(Debug, thiserror::Error)]
-pub enum NodeProblem {
-    #[error("Node has restriction {type_restriction:?} but was found to be {actual_type:?}")]
-    TypeRestrictionFailed {
-        type_restriction: TypeRestriction,
+pub enum ValueProblem {
+    #[error("Value has allowed types {allowed_types:?} but was found to be {actual_type:?}")]
+    DisallowedType {
+        allowed_types: HashSet<JsonType>,
         actual_type: JsonType,
     },
+    #[error("Value was expected to be {expected:?} but was found to be {actual:?}")]
+    WrongValue {
+        expected: serde_json::Value,
+        actual: serde_json::Value,
+    },
+    #[error("Value {actual:?} doesn't match {regex:?}")]
+    NoRegexMatch {
+        regex: Regex,
+        actual: serde_json::Value,
+    },
+    #[error("Not array or array member not matched")]
+    NoArrayContains,
 }
 
 #[derive(Debug, IsVariant)]
-pub enum ValueRestriction {
-    Null,
+pub enum ValueValidator {
+    AnyValue,
+    Type(HashSet<JsonType>),
     Bool(bool),
     ExactNumber(serde_json::Number),
     NumericRange(serde_json::Number, serde_json::Number),
     ExactString(String),
-    Regex(Regex),
-    Key(String, Box<NodeRestriction>),
+    RegexString(Regex),
+    ExactArray(Vec<serde_json::Value>),
+    ArrayContains(Box<Self>),
+    ObjectContains(String, Box<Self>),
+    ObjectNotContains(String),
+    ExactObject(serde_json::Map<String, serde_json::Value>),
 }
 
-fn compare(a: serde_json::Number, b: serde_json::Number) -> Ordering {
-    todo!()
-}
-
-impl ValueRestriction {
-    pub fn allows(&self, value: &serde_json::Value) -> bool {
+impl ValueValidator {
+    pub fn allows(&self, value: &serde_json::Value) -> Result<(), ValueProblem> {
+        use ValueProblem::*;
+        use ValueValidator::*;
         match self {
-            ValueRestriction::Null => value.is_null(),
-            ValueRestriction::Bool(expected) => matches!(value, serde_json::Value::Bool(actual) if expected == actual),
-            ValueRestriction::ExactNumber(expected) => matches!(value, serde_json::Value::Number(actual) if expected == actual),
-            ValueRestriction::NumericRange(_, _) => todo!(),
-            ValueRestriction::ExactString(expected) => matches!(value, serde_json::Value::String(actual) if expected == actual),
-            ValueRestriction::Regex(regex) => matches!(value, serde_json::Value::String(actual) if regex.is_match(actual)),
-            ValueRestriction::Key(key, restriction) => todo!(),
+            AnyValue => Ok(()),
+            Type(allowed_types) => {
+                let jsontype = JsonType::of(value);
+                match allowed_types.contains(&jsontype) {
+                    true => Ok(()),
+                    false => Err(DisallowedType {
+                        allowed_types: allowed_types.clone(),
+                        actual_type: jsontype,
+                    }),
+                }
+            }
+            Bool(expected) => match value {
+                serde_json::Value::Bool(actual) if actual == expected => Ok(()),
+                _ => Err(WrongValue {
+                    expected: serde_json::Value::Bool(expected.clone()),
+                    actual: value.clone(),
+                }),
+            },
+            ExactNumber(expected) => match value {
+                serde_json::Value::Number(actual) if actual == expected => Ok(()),
+                _ => Err(WrongValue {
+                    expected: serde_json::Value::Number(expected.clone()),
+                    actual: value.clone(),
+                }),
+            },
+            NumericRange(_, _) => todo!(),
+            ExactString(expected) => match value {
+                serde_json::Value::String(actual) if actual == expected => Ok(()),
+                _ => Err(WrongValue {
+                    expected: serde_json::Value::String(expected.clone()),
+                    actual: value.clone(),
+                }),
+            },
+            RegexString(must_match) => match value {
+                serde_json::Value::String(actual) if must_match.is_match(actual) => Ok(()),
+                _ => Err(NoRegexMatch {
+                    regex: must_match.clone(),
+                    actual: value.clone(),
+                }),
+            },
+            ExactArray(expected) => match value {
+                serde_json::Value::Array(actual) if actual == expected => Ok(()),
+                _ => Err(WrongValue {
+                    expected: serde_json::Value::Array(expected.clone()),
+                    actual: value.clone(),
+                }),
+            },
+            ArrayContains(expected) => match value {
+                serde_json::Value::Array(actual)
+                    if actual.iter().any(|a| expected.allows(a).is_ok()) =>
+                {
+                    Ok(())
+                }
+
+                _ => Err(NoArrayContains),
+            },
+            ObjectContains(expected_key, expected_value) => todo!(),
+            ObjectNotContains(_) => todo!(),
+            ExactObject(_) => todo!(),
         }
     }
 }
 
-#[derive(Debug)]
-pub enum TypeRestriction {
-    IsNull,
-    NonNull,
-    IsBool,
-    NotBool,
-    IsNumber,
-    NotNumber,
-    IsString,
-    NotString,
-    IsArray,
-    NotArray,
-    IsObject,
-    NotObject,
-}
-
-impl TypeRestriction {
-    pub fn allows(&self, json_type: JsonType) -> bool {
-        let mut allowed = HashSet::new();
-        allowed.extend(JsonType::iter());
-
-        match self {
-            TypeRestriction::IsNull => allowed = hashset!(JsonType::Null),
-            TypeRestriction::NonNull => {
-                allowed.remove(&JsonType::Null);
-            }
-            TypeRestriction::IsBool => allowed = hashset!(JsonType::Bool),
-            TypeRestriction::NotBool => {
-                allowed.remove(&JsonType::Bool);
-            }
-            TypeRestriction::IsNumber => allowed = hashset!(JsonType::Number),
-            TypeRestriction::NotNumber => {
-                allowed.remove(&JsonType::Number);
-            }
-            TypeRestriction::IsString => allowed = hashset!(JsonType::String),
-            TypeRestriction::NotString => {
-                allowed.remove(&JsonType::String);
-            }
-            TypeRestriction::IsArray => allowed = hashset!(JsonType::Array),
-            TypeRestriction::NotArray => {
-                allowed.remove(&JsonType::Array);
-            }
-            TypeRestriction::IsObject => allowed = hashset!(JsonType::Object),
-            TypeRestriction::NotObject => {
-                allowed.remove(&JsonType::Object);
-            }
-        }
-        allowed.contains(&json_type)
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Hash, strum::EnumIter, Clone, Copy)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum JsonType {
     Null,
     Bool,
@@ -116,33 +130,19 @@ impl JsonType {
     }
 }
 
-#[derive(Debug)]
-pub enum NodeRestriction {
-    TypeRestriction(TypeRestriction),
-    ValueRestriction(ValueRestriction),
+impl From<ValueProblem> for Result<(), ValueProblem> {
+    fn from(value_problem: ValueProblem) -> Self {
+        Err(value_problem)
+    }
 }
 
-pub trait NodeValidate<T> {
-    fn validate(self, value: T) -> Vec<NodeProblem>;
-}
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+    #[test]
+    fn test() -> anyhow::Result<()> {
+        let json = json!(null);
 
-impl NodeValidate<serde_json::Value> for NodeRestriction {
-    fn validate(self, value: serde_json::Value) -> Vec<NodeProblem> {
-        use NodeProblem::*;
-        let mut problems = Vec::new();
-
-        match self {
-            NodeRestriction::TypeRestriction(type_restriction) => {
-                let actual_type = JsonType::of(&value);
-                if !type_restriction.allows(actual_type) {
-                    problems.push(TypeRestrictionFailed {
-                        type_restriction,
-                        actual_type,
-                    })
-                }
-            }
-            NodeRestriction::ValueRestriction(value_restriction) => todo!(),
-        }
-        problems
+        Ok(())
     }
 }
