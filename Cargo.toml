@@ -2,6 +2,10 @@
 name = "you-must-conform"
 version = "0.1.0"
 edition = "2021"
+description = "Lint configuration files"
+license = "MIT"
+repository = "https://github.com/aatifsyed/you-must-conform"
+documentation = "https://docs.rs/you-must-conform"
 
 [features]
 
