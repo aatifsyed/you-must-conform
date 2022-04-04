@@ -190,36 +190,37 @@ pub struct MatchesSchema {
     schema: Schema,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, derive_more::From)]
 pub enum FileSpec {
     HasLength(u64),
+    #[serde(with = "serde_regex")]
     MatchesRegex(Regex),
     MatchesSchema(MatchesSchema),
 }
 
-#[derive(Debug, Clone, GenericNew)]
+#[derive(Debug, Clone, GenericNew, Serialize, Deserialize)]
 pub struct FilePresent {
     name: String,
     specs: Vec<FileSpec>,
 }
 
-#[derive(Debug, Clone, GenericNew)]
+#[derive(Debug, Clone, GenericNew, Serialize, Deserialize)]
 pub struct FileNotPresent {
     name: String,
 }
 
-#[derive(Debug, Clone, GenericNew)]
+#[derive(Debug, Clone, GenericNew, Serialize, Deserialize)]
 pub struct FolderPresent {
     name: String,
     children: Vec<FilesAndFolders>,
 }
 
-#[derive(Debug, Clone, GenericNew)]
+#[derive(Debug, Clone, GenericNew, Serialize, Deserialize)]
 pub struct FolderNotPresent {
     name: String,
 }
 
-#[derive(Debug, derive_more::From, Clone)]
+#[derive(Debug, derive_more::From, Clone, Deserialize, Serialize)]
 pub enum FilesAndFolders {
     File(FilePresent),
     NotFile(FileNotPresent),
@@ -231,11 +232,15 @@ pub enum FilesAndFolders {
 mod tests {
     use std::fs;
 
+    use serde_json::json;
     use tempfile::tempdir;
 
     use crate::{
-        check_folder, FileNotPresent, FilePresent, FolderNotPresent, FolderPresent,
+        check_folder,
+        FileFormat::{Json, Toml, Yaml},
+        FileNotPresent, FilePresent, FolderNotPresent, FolderPresent, MatchesSchema,
         Problem::{DisallowedFile, DisallowedFolder},
+        Schema,
     };
 
     #[test]
@@ -298,6 +303,21 @@ mod tests {
         println!("{problems:?}");
         assert!(matches!(problems.as_slice(), [DisallowedFolder(_)]));
 
+        Ok(())
+    }
+
+    #[test]
+    fn dump_config() -> anyhow::Result<()> {
+        let config = vec![FilePresent::new(
+            "Cargo.toml",
+            [MatchesSchema {
+                format: Toml,
+                schema: Schema::Infer(json!({"package": {"edition": "2021"}})),
+            }
+            .into()],
+        )];
+        let config = serde_yaml::to_string(&config)?;
+        println!("{config}");
         Ok(())
     }
 }
