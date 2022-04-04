@@ -12,7 +12,7 @@ pub fn describe_value(value: &Value) -> Value {
         Value::Object(m) => {
             let properties = m
                 .iter()
-                .map(|(k, v)| (k.clone(), describe_value(v).into()))
+                .map(|(k, v)| (k.clone(), describe_value(v)))
                 .collect::<Map<_, _>>();
             json!({"type": "object", "required": properties.keys().collect::<Vec<_>>(), "properties": properties})
         }

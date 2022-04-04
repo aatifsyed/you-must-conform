@@ -1,55 +1,72 @@
 use anyhow::Context;
+use jsonschema::JSONSchema;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::{self, File},
-    io,
+    fs,
     path::{Path, PathBuf},
 };
 mod json;
+mod util;
 use generic_new::GenericNew;
+use util::JSONSchemaShim;
 
 pub fn check_file(
     path: impl AsRef<Path>,
     specs: impl IntoIterator<Item = FileSpec>,
 ) -> anyhow::Result<Vec<Problem>> {
-    use FileSpec::*;
     use Problem::*;
     let mut problems = Vec::new();
     for content in specs {
         let path = path.as_ref().to_owned();
         match content {
-            HasLength(expected) => {
+            FileSpec::HasLength(expected) => {
                 let actual = path
                     .metadata()
                     .context(format!("Couldn't get metadata of {}", path.display()))?
                     .len();
-                problems.push(IncorrectLength {
-                    path,
-                    expected,
-                    actual,
-                })
+                if actual != expected {
+                    problems.push(IncorrectLength {
+                        path,
+                        expected,
+                        actual,
+                    })
+                }
             }
-            MatchesRegex(regex) => {
+            FileSpec::MatchesRegex(regex) => {
                 let s = fs::read_to_string(&path)
                     .context(format!("Couldn't read {}", path.display()))?;
                 if !regex.is_match(&s) {
                     problems.push(RegexNotMatched { path, regex })
                 }
             }
-            Json(schema) => {
-                let f = File::open(&path).context(format!("Couldn't open {}", path.display()))?;
-                match serde_json::from_reader::<_, serde_json::Value>(f) {
-                    Ok(value) => todo!(),
+            FileSpec::MatchesSchema(MatchesSchema { format, schema }) => {
+                let s = fs::read_to_string(&path) // `toml` doesn't have a from_reader
+                    .context(format!("Couldn't read {}", path.display()))?;
+                let d = match format {
+                    FileFormat::Json => {
+                        serde_json::from_str::<serde_json::Value>(&s).map_err(anyhow::Error::new)
+                    }
+                    FileFormat::Toml => toml::from_str(&s).map_err(anyhow::Error::new),
+                    FileFormat::Yaml => serde_yaml::from_str(&s).map_err(anyhow::Error::new),
+                };
+                match d {
+                    Ok(v) => match schema {
+                        Schema::Infer(_) => todo!(),
+                        Schema::Literal(schema) => {
+                            let schema: &JSONSchema = schema.as_ref();
+                            if let Err(e) = schema.validate(&v) {
+                                todo!()
+                            }
+                        }
+                    },
                     Err(err) => problems.push(InvalidFormat {
                         path,
-                        format: "json",
-                        err: err.into(),
+                        format: format.into(),
+                        err,
                     }),
                 }
             }
-            Toml(schema) => todo!(),
-            Yaml(schema) => todo!(),
         }
     }
     Ok(problems)
@@ -124,17 +141,28 @@ pub enum Problem {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum Schema {
-    Like(serde_json::Value),
-    Schema(serde_json::Value),
+    Infer(serde_json::Value),
+    Literal(JSONSchemaShim),
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, strum::IntoStaticStr)]
+pub enum FileFormat {
+    Json,
+    Toml,
+    Yaml,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MatchesSchema {
+    format: FileFormat,
+    schema: Schema,
 }
 
 #[derive(Debug, Clone)]
 pub enum FileSpec {
     HasLength(u64),
     MatchesRegex(Regex),
-    Json(Schema),
-    Toml(Schema),
-    Yaml(Schema),
+    MatchesSchema(MatchesSchema),
 }
 
 #[derive(Debug, Clone, GenericNew)]
