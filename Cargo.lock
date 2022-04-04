@@ -731,26 +731,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "moan"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap 3.1.8",
- "derive_more",
- "generic-new",
- "jsonschema",
- "regex",
- "serde",
- "serde_json",
- "serde_regex",
- "serde_yaml",
- "strum",
- "tempfile",
- "thiserror",
- "toml",
-]
-
-[[package]]
 name = "native-tls"
 version = "0.2.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1811,4 +1791,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56c1936c4cc7a1c9ab21a1ebb602eb942ba868cbd44a99cb7cdc5892335e1c85"
 dependencies = [
  "linked-hash-map",
+]
+
+[[package]]
+name = "you-must-conform"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 3.1.8",
+ "derive_more",
+ "generic-new",
+ "jsonschema",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_regex",
+ "serde_yaml",
+ "strum",
+ "tempfile",
+ "thiserror",
+ "toml",
 ]

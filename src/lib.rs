@@ -172,12 +172,14 @@ pub enum Problem {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "kebab-case")]
 pub enum Schema {
     Infer(serde_json::Value),
     Literal(JSONSchemaShim),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, strum::IntoStaticStr)]
+#[serde(rename_all = "kebab-case")]
 pub enum FileFormat {
     Json,
     Toml,
@@ -185,12 +187,14 @@ pub enum FileFormat {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "kebab-case")]
 pub struct MatchesSchema {
     format: FileFormat,
     schema: Schema,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, derive_more::From)]
+#[serde(rename_all = "kebab-case")]
 pub enum FileSpec {
     HasLength(u64),
     #[serde(with = "serde_regex")]
@@ -199,28 +203,33 @@ pub enum FileSpec {
 }
 
 #[derive(Debug, Clone, GenericNew, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct FilePresent {
     name: String,
     specs: Vec<FileSpec>,
 }
 
 #[derive(Debug, Clone, GenericNew, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct FileNotPresent {
     name: String,
 }
 
 #[derive(Debug, Clone, GenericNew, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct FolderPresent {
     name: String,
     children: Vec<FilesAndFolders>,
 }
 
 #[derive(Debug, Clone, GenericNew, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct FolderNotPresent {
     name: String,
 }
 
 #[derive(Debug, derive_more::From, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum FilesAndFolders {
     File(FilePresent),
     NotFile(FileNotPresent),
@@ -237,8 +246,9 @@ mod tests {
 
     use crate::{
         check_folder,
-        FileFormat::{Json, Toml, Yaml},
-        FileNotPresent, FilePresent, FolderNotPresent, FolderPresent, MatchesSchema,
+        FileFormat::Toml,
+        FileNotPresent, FilePresent, FilesAndFolders, FolderNotPresent, FolderPresent,
+        MatchesSchema,
         Problem::{DisallowedFile, DisallowedFolder},
         Schema,
     };
@@ -308,14 +318,15 @@ mod tests {
 
     #[test]
     fn dump_config() -> anyhow::Result<()> {
-        let config = vec![FilePresent::new(
+        let config: Vec<FilesAndFolders> = vec![FilePresent::new(
             "Cargo.toml",
             [MatchesSchema {
                 format: Toml,
                 schema: Schema::Infer(json!({"package": {"edition": "2021"}})),
             }
             .into()],
-        )];
+        )
+        .into()];
         let config = serde_yaml::to_string(&config)?;
         println!("{config}");
         Ok(())
