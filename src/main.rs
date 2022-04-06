@@ -1,54 +1,40 @@
-use anyhow::Context;
+use anyhow::{bail, Context};
 use clap::Parser;
-use generic_new::GenericNew;
 use serde::{Deserialize, Serialize};
-use std::{fs::File, path::PathBuf};
-use you_must_conform::{check_folder, FilesAndFolders};
+use std::fs::File;
+use std::path::PathBuf;
+use you_must_conform::CheckItem;
 
 #[derive(Debug, Parser)]
 #[clap(author, version, about)]
 struct Args {
+    #[clap(short, long, default_value = "conform.yaml")]
     config: PathBuf,
+    #[clap(short, long, default_value = ".")]
     folder: PathBuf,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, GenericNew)]
-struct YouMustConformConfig {
-    config: Vec<FilesAndFolders>,
+#[derive(Debug, Serialize, Deserialize)]
+struct Config {
+    config: Vec<CheckItem>,
 }
 
 fn main() -> anyhow::Result<()> {
-    let opt = Args::parse();
-    let config = File::open(opt.config).context("Couldn't open config file")?;
-    let config: YouMustConformConfig =
-        serde_yaml::from_reader(config).context("Invalid config file")?;
-    let problems = check_folder(opt.folder, config.config).context("Couldn't check folder")?;
-    println!("{problems:?}");
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use serde_json::json;
-    use you_must_conform::{FileFormat::Toml, FilePresent, MatchesSchema, Schema::Infer};
-
-    use crate::YouMustConformConfig;
-
-    #[test]
-    fn dump_config() -> anyhow::Result<()> {
-        let config = YouMustConformConfig::new([FilePresent::new(
-            "Cargo.toml",
-            [MatchesSchema::new(
-                Toml,
-                Infer(json!(
-                    {"package":{"edition": "2021"}}
-                )),
-            )
-            .into()],
-        )
-        .into()]);
-        let config = serde_yaml::to_string(&config)?;
-        println!("{config}");
-        Ok(())
+    let args = Args::parse();
+    let config = File::open(&args.config).context(format!(
+        "Couldn't open config file {}",
+        args.config.display()
+    ))?;
+    let config: Config = serde_yaml::from_reader(config).context("Couldn't parse config")?;
+    let problems = you_must_conform::check_items(args.folder, config.config)
+        .context("Unable to complete checking")?;
+    match problems.len() {
+        0 => Ok(()),
+        n => {
+            for problem in problems {
+                eprintln!("{problem}");
+            }
+            bail!("Found {n} problems")
+        }
     }
 }

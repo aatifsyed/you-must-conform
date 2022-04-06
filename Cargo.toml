@@ -2,7 +2,7 @@
 name = "you-must-conform"
 version = "0.1.0"
 edition = "2021"
-description = "Lint configuration files"
+description = "A command-line tool for enforcing YAML|JSON|TOML|text file contents."
 license = "MIT"
 repository = "https://github.com/aatifsyed/you-must-conform"
 documentation = "https://docs.rs/you-must-conform"
@@ -14,6 +14,7 @@ anyhow = "1.0.56"
 clap = { version = "3.1.8", features = ["derive"] }
 derive_more = "0.99.17"
 generic-new = "0.1.0"
+itertools = "0.10.3"
 jsonschema = "0.15.1"
 regex = "1.5.5"
 serde = { version = "1.0.136", features = ["derive"] }
@@ -25,4 +26,5 @@ thiserror = "1.0.30"
 toml = "0.5.8"
 
 [dev-dependencies]
+assert_cmd = "2.0.4"
 tempfile = "3.3.0"
