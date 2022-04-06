@@ -11,6 +11,7 @@ mod json;
 mod util;
 use generic_new::GenericNew;
 use util::JSONSchemaShim;
+mod newconfig;
 
 use crate::json::describe_value;
 
@@ -186,7 +187,7 @@ pub enum FileFormat {
     Yaml,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, GenericNew)]
 #[serde(rename_all = "kebab-case")]
 pub struct MatchesSchema {
     format: FileFormat,
@@ -313,22 +314,6 @@ mod tests {
         println!("{problems:?}");
         assert!(matches!(problems.as_slice(), [DisallowedFolder(_)]));
 
-        Ok(())
-    }
-
-    #[test]
-    fn dump_config() -> anyhow::Result<()> {
-        let config: Vec<FilesAndFolders> = vec![FilePresent::new(
-            "Cargo.toml",
-            [MatchesSchema {
-                format: Toml,
-                schema: Schema::Infer(json!({"package": {"edition": "2021"}})),
-            }
-            .into()],
-        )
-        .into()];
-        let config = serde_yaml::to_string(&config)?;
-        println!("{config}");
         Ok(())
     }
 }
