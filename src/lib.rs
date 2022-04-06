@@ -57,7 +57,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{
     borrow::Cow,
-    fs,
+    fs, io,
     path::{Path, PathBuf},
 };
 mod json;
@@ -114,12 +114,15 @@ pub fn check_items(
             CheckItem::File { file, check } => {
                 let path = root.join(file);
                 match check {
-                    // This could be buggy - filesystem error will return false
                     FileCheck::Exists {
                         exists: should_exist,
-                    } => match path.is_file() {
-                        true if !should_exist => problems.push(DisallowedFile(path)),
-                        false if should_exist => problems.push(FileNotPresent(path)),
+                    } => match path.metadata() {
+                        Ok(meta) if meta.is_file() && !should_exist => {
+                            problems.push(DisallowedFile(path))
+                        }
+                        Err(err) if err.kind() == io::ErrorKind::NotFound && should_exist => {
+                            problems.push(FileNotPresent(path))
+                        }
                         _ => (),
                     },
                     FileCheck::LooksLike {
