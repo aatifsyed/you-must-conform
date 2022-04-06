@@ -10,7 +10,7 @@
 
 A command-line tool for enforcing YAML|JSON|TOML|text file contents.
 
-Use as follows:
+## Usage
 ```yaml
 # conform.yaml
 config:
@@ -24,9 +24,26 @@ config:
 - file: src/lib.rs
   matches-regex: '(?m)^use' # Ensure this regex is matched in the file
 
+include:                    # (Recursively) merge config from these urls
+- https://example.com/another-conform.yaml
+
 ```
 
 ```console
+$ you-must-conform --help
+you-must-conform 1.1.0
+A command-line tool for enforcing YAML|JSON|TOML|text file contents.
+
+USAGE:
+    you-must-conform [OPTIONS] <--file <FILE>|--url <URL>>
+
+OPTIONS:
+    -c, --context <CONTEXT>    The folder to check against the config file [default: .]
+    -f, --file <FILE>          The config file to check [default: conform.yaml]
+    -h, --help                 Print help information
+    -u, --url <URL>            A url to fetch the config file from instead
+    -V, --version              Print version information
+
 $ you-must-conform
 Schema not matched in ./Cargo.toml:
     "package" is a required property
